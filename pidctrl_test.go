@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const INT_TEST_SCALE = 1000
+
 var tests = []struct {
 	p       float64
 	i       float64
@@ -162,6 +164,22 @@ func (u *testUpdate) check(c *PIDController) error {
 	return nil
 }
 
+func (u *testUpdate) checkInt(c, cct *IntegerPIDController) error {
+	if u.setpoint != 0 {
+		c.Set(int64(u.setpoint * INT_TEST_SCALE))
+		cct.Set(int64(u.setpoint * INT_TEST_SCALE))
+	}
+	output := float64(c.UpdateDuration(int64(u.input*INT_TEST_SCALE), u.duration)) / INT_TEST_SCALE
+	if round(output, 2) != round(u.output, 2) {
+		return fmt.Errorf("Bad output: %f != %f (%#v)", output, u.output, u)
+	}
+	output = float64(cct.UpdateConstInterval(int64(u.input*INT_TEST_SCALE))) / INT_TEST_SCALE
+	if round(output, 2) != round(u.output, 2) {
+		return fmt.Errorf("ConstIntervalVersion Bad output: %f != %f (%#v)", output, u.output, u)
+	}
+	return nil
+}
+
 func TestUpdate_p(t *testing.T) {
 	defer func() {
 		if r := recover(); (reflect.TypeOf(r)).Name() == "MinMaxError" {
@@ -178,6 +196,30 @@ func TestUpdate_p(t *testing.T) {
 		}
 		for _, u := range test.updates {
 			if err := u.check(c); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+}
+
+func TestUpdate_pInt(t *testing.T) {
+	defer func() {
+		if r := recover(); (reflect.TypeOf(r)).Name() == "IntMinMaxError" {
+			fmt.Println("Recovered Error:", r)
+		} else {
+			t.Error(r)
+		}
+	}()
+	for i, test := range tests {
+		t.Logf("-- test #%d", i+1)
+		c := NewIntegerPIDController(test.p, test.i, test.d)
+		cct := NewIntegerPIDController(test.p, test.i, test.d)
+		if test.min != 0 || test.max != 0 {
+			c.SetOutputLimits(int64(test.min*INT_TEST_SCALE), int64(test.max*INT_TEST_SCALE))
+			cct.SetOutputLimits(int64(test.min*INT_TEST_SCALE), int64(test.max*INT_TEST_SCALE))
+		}
+		for _, u := range test.updates {
+			if err := u.checkInt(c, cct); err != nil {
 				t.Error(err)
 			}
 		}
